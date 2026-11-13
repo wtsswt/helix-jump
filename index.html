@@ -378,13 +378,16 @@
 
   var CFG = {
     R: 1.0,          // 层半径（世界单位）
-    GAP: 0.48,       // 层间距
-    THICK: 0.075,    // 层厚度
+    GAP: 0.78,       // 层间距
+    THICK: 0.050,    // 层厚度
     BALL_R: 0.115,   // 球半径
     ORBIT: 0.76,     // 球所在轨道半径
-    TILT: 0.30,      // 等轴测压扁系数
-    GRAV: -9.0,
-    VMAX: -6.0,
+    TILT: 0.36,      // 等轴测压扁系数
+    GRAV: -11.0,     // 重力
+    VMAX: -7.5,      // 终端速度
+    BOUNCE_V: 3.20,  // 首次触层反弹初速度
+    BOUNCE_DECAY: 0.52, // 每次反弹衰减
+    BOUNCE_MAX: 3,   // 触层最多弹几次后落定
     SPIN: 2.4,       // 键盘旋转角速度 rad/s
     DRAG: 0.0062     // 拖动灵敏度 rad/px
   };
@@ -425,7 +428,9 @@
     view.W = W;
     view.H = H;
     view.dpr = dpr;
-    view.scale = Math.min(W * 0.42, H * 0.29);
+    // 横屏/宽屏时塔略放大，避免大片留白；竖屏保持 5-6 层的可视高度
+    var vScaleH = (W > H * 1.15) ? H * 0.30 : H * 0.25;
+    view.scale = Math.min(W * 0.42, vScaleH);
 
     canvas.width = Math.round(W * dpr);
     canvas.height = Math.round(H * dpr);
@@ -456,6 +461,8 @@
     soundOn: true,
     deadT: 0,
     overShown: false,
+    squash: 0,        // 落地形变（0~1）
+    bounceCount: 0,   // 本次触层已反弹次数
     t: 0
   };
 
@@ -550,6 +557,8 @@
     S.floats.length = 0;
     S.deadT = 0;
     S.overShown = false;
+    S.squash = 0;
+    S.bounceCount = 0;
 
     updateHud();
   }
@@ -616,6 +625,7 @@
         S.resting = false;
         S.restIdx = -1;
         S.vy = -0.35;
+        S.bounceCount = 0;
         sfxSlip();
       }
     }
@@ -662,9 +672,27 @@
 
   function landOn(L) {
     S.ballY = L.y + CFG.BALL_R + 0.002;
+
+    // 触层先弹几下再落定，手感上是"弹球"而不是"硬摔"
+    if (S.bounceCount < CFG.BOUNCE_MAX && S.vy < -1.2) {
+      var v = CFG.BOUNCE_V * Math.pow(CFG.BOUNCE_DECAY, S.bounceCount);
+      S.vy = v;
+      S.bounceCount++;
+      S.squash = 1;
+      S.resting = false;
+      S.restIdx = -1;
+      S.shake = Math.max(S.shake, 3 + S.bounceCount);
+      sfxBounce(S.bounceCount);
+      burst(screenX(), screenY() + CFG.BALL_R * view.scale * 0.7,
+            4 + S.bounceCount, ['#c8f4ff', '#7ad9ff'], 2.0 + S.bounceCount * 0.4);
+      return;
+    }
+
     S.vy = 0;
     S.resting = true;
     S.restIdx = L.i;
+    S.bounceCount = 0;
+    S.squash = 1;
 
     if (S.combo >= 2) {
       var bonus = S.combo * 12;
@@ -800,6 +828,11 @@
   function sfxSlip() { tone(320, 0.07, 'sine', 0.06, 460); }
 
   function sfxLand() { tone(150, 0.13, 'sine', 0.14, 78); }
+
+  function sfxBounce(n) {
+    var f = 380 + (n || 1) * 90;
+    tone(f, 0.075, 'sine', 0.10, f * 0.62);
+  }
 
   function sfxDie() {
     tone(260, 0.55, 'sawtooth', 0.13, 42);
@@ -995,6 +1028,13 @@
     var sy = screenY();
     var r = CFG.BALL_R * view.scale;
 
+    // 落地压扁 / 下落拉伸
+    var sq = S.squash;
+    var stretch = S.resting ? 0 : Math.min(0.16, Math.abs(S.vy) * 0.018);
+    var rx = r * (1 + sq * 0.30 - stretch * 0.45);
+    var ry = r * (1 - sq * 0.30 + stretch);
+    var drawR = Math.max(rx, ry);
+
     // 外发光
     var glow = ctx.createRadialGradient(sx, sy, r * 0.85, sx, sy, r * 2.1);
     glow.addColorStop(0, 'rgba(110,215,255,0.20)');
@@ -1005,25 +1045,25 @@
     ctx.fill();
 
     // 球体
-    var g = ctx.createRadialGradient(sx - r * 0.36, sy - r * 0.42, r * 0.08, sx, sy, r * 1.02);
+    var g = ctx.createRadialGradient(sx - r * 0.36, sy - r * 0.42, r * 0.08, sx, sy, drawR * 1.02);
     g.addColorStop(0, '#ffffff');
     g.addColorStop(0.34, '#a8ecff');
     g.addColorStop(0.78, '#4bb4e8');
     g.addColorStop(1, '#1f74ad');
     ctx.beginPath();
-    ctx.arc(sx, sy, r, 0, TAU);
+    ctx.ellipse(sx, sy, rx, ry, 0, 0, TAU);
     ctx.fillStyle = g;
     ctx.fill();
 
     // 高光
     ctx.beginPath();
-    ctx.arc(sx - r * 0.30, sy - r * 0.36, r * 0.27, 0, TAU);
+    ctx.ellipse(sx - rx * 0.30, sy - ry * 0.36, rx * 0.27, ry * 0.27, 0, 0, TAU);
     ctx.fillStyle = 'rgba(255,255,255,0.9)';
     ctx.fill();
 
     // 环
     ctx.beginPath();
-    ctx.arc(sx, sy, r, 0, TAU);
+    ctx.ellipse(sx, sy, rx, ry, 0, 0, TAU);
     ctx.lineWidth = Math.max(1, r * 0.1);
     ctx.strokeStyle = 'rgba(255,255,255,0.35)';
     ctx.stroke();
@@ -1141,6 +1181,8 @@
     }
 
     updateFx(dt);
+
+    if (S.squash > 0) S.squash = Math.max(0, S.squash - dt * 5.5);
 
     var target = S.ballY - 0.05;
     var k = 1 - Math.exp(-9 * dt);
