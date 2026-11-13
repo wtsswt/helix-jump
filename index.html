@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0a0508" />
+<meta name="description" content="螺旋弹球：旋转螺旋塔让小球穿过缺口一路坠底的浏览器小游戏，纯 Canvas 手写，无依赖。" />
+<title>螺旋弹球 · Helix Jump</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html, body { margin: 0; padding: 0; height: 100%; }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    background: #0a0508;
+    color: #f3e9ec;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+                 "Microsoft YaHei", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  #stage {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    touch-action: none;
+  }
+
+  #game {
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+  }
+
+  /* ---------- HUD ---------- */
+  .hud {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 5;
+  }
+
+  .scorebox {
+    position: absolute;
+    left: max(14px, env(safe-area-inset-left));
+    top: max(12px, env(safe-area-inset-top));
+    line-height: 1;
+  }
+
+  .score {
+    font-size: clamp(30px, 9vw, 48px);
+    font-weight: 900;
+    letter-spacing: -0.02em;
+    color: #fff;
+    text-shadow: 0 4px 24px rgba(255, 90, 120, 0.45);
+    transition: transform 0.11s ease-out;
+    transform-origin: left center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .score.pop { transform: scale(1.14); }
+
+  .depth {
+    margin-top: 6px;
+    font-size: clamp(11px, 3vw, 13px);
+    color: #b9a3ac;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+  }
+
+  .topbtns {
+    position: absolute;
+    right: max(14px, env(safe-area-inset-right));
+    top: max(12px, env(safe-area-inset-top));
+    display: flex;
+    gap: 10px;
+  }
+
+  .btn {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.07);
+    color: #f3e9ec;
+    display: grid;
+    place-items: center;
+    pointer-events: auto;
+    cursor: pointer;
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    transition: background 0.18s, transform 0.12s;
+  }
+
+  .btn:hover { background: rgba(255, 255, 255, 0.13); }
+  .btn:active { transform: scale(0.94); }
+  .btn[aria-pressed="false"] { color: #7d6b73; }
+
+  .combo {
+    position: absolute;
+    left: 50%;
+    top: 17%;
+    transform: translate(-50%, -50%) scale(0.86);
+    font-size: clamp(15px, 4.4vw, 21px);
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    color: #ffd166;
+    text-shadow: 0 0 20px rgba(255, 190, 60, 0.65);
+    opacity: 0;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    white-space: nowrap;
+  }
+
+  .combo.on {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+
+  .hint {
+    position: absolute;
+    left: 50%;
+    bottom: max(20px, calc(env(safe-area-inset-bottom) + 16px));
+    transform: translateX(-50%);
+    padding: 8px 16px;
+    border-radius: 999px;
+    background: rgba(12, 5, 9, 0.62);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    font-size: clamp(11px, 3.1vw, 13px);
+    letter-spacing: 0.08em;
+    color: #dbc7cf;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.5s ease;
+  }
+
+  .hint.show { opacity: 1; }
+
+  /* ---------- 遮罩层 ---------- */
+  .overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(12px, 3vw, 20px);
+    padding: clamp(20px, 5vw, 44px);
+    text-align: center;
+    background: radial-gradient(120% 90% at 50% 42%, rgba(24, 9, 16, 0.58), rgba(6, 3, 6, 0.9));
+    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: blur(3px);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.26s ease, visibility 0.26s;
+  }
+
+  .overlay.show { opacity: 1; visibility: visible; }
+
+  .badge {
+    font-size: clamp(9px, 2.5vw, 11px);
+    letter-spacing: 0.38em;
+    color: #e0607a;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding-left: 0.38em;
+  }
+
+  .title {
+    margin: 0;
+    font-size: clamp(30px, 10vw, 52px);
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    padding-left: 0.08em;
+    background: linear-gradient(180deg, #ffffff 10%, #ff9aa8 62%, #e8394f 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    filter: drop-shadow(0 8px 28px rgba(232, 57, 79, 0.4));
+  }
+
+  .title2 {
+    margin: 0;
+    font-size: clamp(24px, 7.5vw, 38px);
+    font-weight: 900;
+    letter-spacing: 0.1em;
+    padding-left: 0.1em;
+    color: #fff;
+  }
+
+  .desc {
+    margin: 0;
+    font-size: clamp(12.5px, 3.6vw, 15px);
+    line-height: 1.85;
+    color: #b9a3ac;
+    max-width: 26em;
+  }
+
+  .meta {
+    margin: 0;
+    font-size: clamp(11.5px, 3.2vw, 13px);
+    color: #8f7d86;
+    letter-spacing: 0.06em;
+  }
+
+  .meta b { color: #ffd166; font-weight: 800; }
+
+  .cta {
+    min-height: 50px;
+    min-width: 168px;
+    padding: 0 clamp(24px, 7vw, 38px);
+    border: none;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #ff7a8a, #e8394f);
+    color: #fff;
+    font-family: inherit;
+    font-size: clamp(14.5px, 4vw, 16.5px);
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    cursor: pointer;
+    box-shadow: 0 14px 34px -12px rgba(232, 57, 79, 0.85);
+    transition: transform 0.12s ease, box-shadow 0.2s ease;
+  }
+
+  .cta:hover { box-shadow: 0 16px 40px -10px rgba(232, 57, 79, 1); }
+  .cta:active { transform: scale(0.965); }
+
+  .stats {
+    display: flex;
+    gap: clamp(18px, 6vw, 44px);
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .stats > div {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 62px;
+  }
+
+  .stats span {
+    font-size: clamp(24px, 7vw, 34px);
+    font-weight: 900;
+    color: #fff;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+
+  .stats small {
+    font-size: clamp(10px, 2.8vw, 11.5px);
+    color: #8f7d86;
+    letter-spacing: 0.18em;
+  }
+
+  /* ---------- 页脚署名 ---------- */
+  .credit {
+    flex: 0 0 auto;
+    text-align: center;
+    padding: 7px 14px calc(7px + env(safe-area-inset-bottom));
+    font-size: clamp(10px, 2.6vw, 12px);
+    line-height: 1.5;
+    letter-spacing: 0.04em;
+    color: #9a8a90;
+    background: #0a0508;
+  }
+
+  /* ---------- 断点 ---------- */
+  @media (min-width: 768px) {
+    .scorebox { left: max(22px, env(safe-area-inset-left)); top: max(20px, env(safe-area-inset-top)); }
+    .topbtns { right: max(22px, env(safe-area-inset-right)); top: max(20px, env(safe-area-inset-top)); gap: 12px; }
+    .btn { width: 46px; height: 46px; border-radius: 15px; }
+    .overlay { gap: 18px; }
+  }
+
+  @media (min-width: 1024px) {
+    .scorebox { left: max(36px, env(safe-area-inset-left)); top: max(28px, env(safe-area-inset-top)); }
+    .topbtns { right: max(36px, env(safe-area-inset-right)); top: max(28px, env(safe-area-inset-top)); }
+    .btn { width: 48px; height: 48px; }
+    .desc { font-size: 15.5px; }
+  }
+
+  @media (max-height: 560px) {
+    .desc { display: none; }
+    .overlay { gap: 10px; }
+    .title { font-size: clamp(24px, 7vh, 34px); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 0.01ms !important; }
+  }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <canvas id="game" aria-label="螺旋弹球游戏画面"></canvas>
+
+  <div class="hud">
+    <div class="scorebox">
+      <div class="score" id="score">0</div>
+      <div class="depth" id="depth">深度 0</div>
+    </div>
+
+    <div class="topbtns">
+      <button class="btn" id="btnSound" aria-label="音效开关" aria-pressed="true">
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+          <path d="M8.2 3.1 4.8 5.9H2.5a1 1 0 0 0-1 1v4.2a1 1 0 0 0 1 1h2.3l3.4 2.8a.6.6 0 0 0 1-.46V3.56a.6.6 0 0 0-1-.46z" fill="currentColor"/>
+          <path d="M11.9 5.6a4 4 0 0 1 0 6.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <path d="M13.9 3.4a7 7 0 0 1 0 11.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity="0.6"/>
+        </svg>
+      </button>
+      <button class="btn" id="btnPause" aria-label="暂停">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor" aria-hidden="true">
+          <rect x="4" y="3" width="3.4" height="12" rx="1.3"/>
+          <rect x="10.6" y="3" width="3.4" height="12" rx="1.3"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="combo" id="combo"></div>
+    <div class="hint" id="hint">左右滑动 · 或按 ← → 转动塔身</div>
+  </div>
+
+  <div class="overlay show" id="startScreen">
+    <div class="badge">Helix Jump</div>
+    <h1 class="title">螺旋弹球</h1>
+    <p class="desc">
+      转动螺旋塔，让小球从缺口一路坠到底。<br />
+      撞上发红光的尖刺层就结束。
+    </p>
+    <button class="cta" id="btnStart">开 始 下 坠</button>
+    <p class="meta">最高分 <b id="bestStart">0</b></p>
+  </div>
+
+  <div class="overlay" id="overScreen">
+    <div class="badge">Game Over</div>
+    <h2 class="title2">撞上了</h2>
+    <div class="stats">
+      <div><span id="finalScore">0</span><small>得分</small></div>
+      <div><span id="finalDepth">0</span><small>深度</small></div>
+      <div><span id="finalBest">0</span><small>最高</small></div>
+    </div>
+    <button class="cta" id="btnAgain">再 来 一 局</button>
+  </div>
+
+  <div class="overlay" id="pauseScreen">
+    <h2 class="title2">已暂停</h2>
+    <p class="desc">喘口气，随时可以继续。</p>
+    <button class="cta" id="btnResume">继 续</button>
+  </div>
+</div>
+
+<footer class="credit">© 2026 swt · AI 辅助生成</footer>
+
+<script>
+(function () {
+  'use strict';
+
+  // ===================== 常量 =====================
+  var TAU = Math.PI * 2;
+  var HALF_PI = Math.PI / 2;
+  var BALL_ANGLE = 0;              // 球在轨道上的角度：屏幕正右方
+
+  var CFG = {
+    R: 1.0,          // 层半径（世界单位）
+    GAP: 0.48,       // 层间距
+    THICK: 0.075,    // 层厚度
+    BALL_R: 0.115,   // 球半径
+    ORBIT: 0.76,     // 球所在轨道半径
+    TILT: 0.30,      // 等轴测压扁系数
+    GRAV: -9.0,
+    VMAX: -6.0,
+    SPIN: 2.4,       // 键盘旋转角速度 rad/s
+    DRAG: 0.0062     // 拖动灵敏度 rad/px
+  };
+
+  var BALL_ANG = Math.asin(CFG.BALL_R / CFG.ORBIT); // 球的角半径
+
+  // ===================== DOM =====================
+  var stage = document.getElementById('stage');
+  var canvas = document.getElementById('game');
+  var ctx = canvas.getContext('2d', { alpha: false });
+
+  var elScore = document.getElementById('score');
+  var elDepth = document.getElementById('depth');
+  var elCombo = document.getElementById('combo');
+  var elHint = document.getElementById('hint');
+
+  var startScreen = document.getElementById('startScreen');
+  var overScreen = document.getElementById('overScreen');
+  var pauseScreen = document.getElementById('pauseScreen');
+
+  var bestStart = document.getElementById('bestStart');
+  var finalScore = document.getElementById('finalScore');
+  var finalDepth = document.getElementById('finalDepth');
+  var finalBest = document.getElementById('finalBest');
+
+  var btnSound = document.getElementById('btnSound');
+  var btnPause = document.getElementById('btnPause');
+
+  // ===================== 视图 =====================
+  var view = { W: 1, H: 1, dpr: 1, scale: 200 };
+
+  function resize() {
+    var rect = stage.getBoundingClientRect();
+    var W = Math.max(1, Math.round(rect.width));
+    var H = Math.max(1, Math.round(rect.height));
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    view.W = W;
+    view.H = H;
+    view.dpr = dpr;
+    view.scale = Math.min(W * 0.42, H * 0.29);
+
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    buildDust();
+  }
+
+  // ===================== 状态 =====================
+  var S = {
+    phase: 'ready',   // ready | playing | paused | over
+    rot: 0,
+    ballY: 0,
+    vy: 0,
+    resting: false,
+    restIdx: -1,
+    camY: 0,
+    layers: [],
+    nextIdx: 0,
+    score: 0,
+    combo: 0,
+    depth: 0,
+    best: 0,
+    shake: 0,
+    particles: [],
+    floats: [],
+    soundOn: true,
+    deadT: 0,
+    overShown: false,
+    t: 0
+  };
+
+  var keys = { left: false, right: false };
+
+  try {
+    S.best = parseInt(localStorage.getItem('helix-jump-best') || '0', 10) || 0;
+    S.soundOn = localStorage.getItem('helix-jump-sound') !== '0';
+  } catch (e) { /* 隐私模式忽略 */ }
+
+  // ===================== 工具 =====================
+  function angDiff(a, b) {
+    var d = (a - b) % TAU;
+    if (d > Math.PI) d -= TAU;
+    if (d < -Math.PI) d += TAU;
+    return d;
+  }
+
+  function layerByIdx(i) {
+    for (var n = 0; n < S.layers.length; n++) {
+      if (S.layers[n].i === i) return S.layers[n];
+    }
+    return null;
+  }
+
+  // ===================== 关卡生成 =====================
+  function makeLayer(i, prevGap) {
+    var prog = Math.min(1, i / 70);
+    var gapW = 1.15 - 0.50 * prog;      // 缺口张角：1.15 → 0.65 rad
+    var gap;
+
+    if (prevGap === null || prevGap === undefined) {
+      gap = BALL_ANGLE;                 // 第一层正对球
+    } else {
+      var dir = Math.random() < 0.5 ? -1 : 1;
+      var step = 0.70 + Math.random() * 1.80;
+      var cand = prevGap + dir * step;
+      // 缺口始终落在球的两侧 135° 内，避免要绕大半圈
+      if (Math.abs(angDiff(cand, BALL_ANGLE)) > 2.35) cand = prevGap - dir * step;
+      gap = cand;
+    }
+    gap = ((gap % TAU) + TAU) % TAU;
+
+    var hazard = i > 9 && Math.random() < Math.min(0.30, (i - 9) * 0.026);
+
+    return {
+      i: i,
+      y: -i * CFG.GAP,
+      gap: gap,
+      gapW: gapW,
+      hazard: hazard,
+      seed: Math.random() * 1000
+    };
+  }
+
+  function ensureLayers() {
+    var need = S.ballY - 9;
+    while (S.nextIdx < 5000 && -S.nextIdx * CFG.GAP > need) {
+      var prev = S.layers.length ? S.layers[S.layers.length - 1] : null;
+      S.layers.push(makeLayer(S.nextIdx, prev ? prev.gap : null));
+      S.nextIdx++;
+    }
+    var top = S.ballY + 3.4;
+    while (S.layers.length > 10 && S.layers[0].y > top) {
+      S.layers.shift();
+    }
+  }
+
+  // ===================== 判定 =====================
+  function canPass(L) {
+    var d = angDiff(BALL_ANGLE, L.gap + S.rot);
+    return Math.abs(d) < L.gapW / 2 - BALL_ANG;
+  }
+
+  // ===================== 游戏流程 =====================
+  function reset() {
+    S.rot = 0;
+    S.ballY = 0.66;
+    S.vy = 0;
+    S.resting = false;
+    S.restIdx = -1;
+    S.layers.length = 0;
+    S.nextIdx = 0;
+    ensureLayers();
+
+    S.camY = S.ballY - 0.05;
+    S.score = 0;
+    S.combo = 0;
+    S.depth = 0;
+    S.shake = 0;
+    S.particles.length = 0;
+    S.floats.length = 0;
+    S.deadT = 0;
+    S.overShown = false;
+
+    updateHud();
+  }
+
+  function startGame() {
+    actx();                                // 解锁音频
+    reset();
+    S.phase = 'playing';
+    startScreen.classList.remove('show');
+    overScreen.classList.remove('show');
+    pauseScreen.classList.remove('show');
+
+    elHint.classList.add('show');
+    window.setTimeout(function () { elHint.classList.remove('show'); }, 4200);
+  }
+
+  function showOver() {
+    finalScore.textContent = S.score;
+    finalDepth.textContent = S.depth;
+    finalBest.textContent = S.best;
+    overScreen.classList.add('show');
+  }
+
+  function togglePause() {
+    if (S.phase === 'playing') {
+      S.phase = 'paused';
+      pauseScreen.classList.add('show');
+    } else if (S.phase === 'paused') {
+      S.phase = 'playing';
+      pauseScreen.classList.remove('show');
+    }
+  }
+
+  function die() {
+    S.phase = 'over';
+    S.deadT = 0;
+    S.shake = 26;
+    explosion();
+    sfxDie();
+
+    if (S.score > S.best) {
+      S.best = S.score;
+      try { localStorage.setItem('helix-jump-best', String(S.best)); } catch (e) {}
+    }
+    bestStart.textContent = S.best;
+  }
+
+  // ===================== 每帧逻辑 =====================
+  function updatePlay(dt) {
+    ensureLayers();
+
+    // 旋转
+    var spin = 0;
+    if (keys.left) spin -= 1;
+    if (keys.right) spin += 1;
+    if (spin !== 0) S.rot += spin * CFG.SPIN * dt;
+
+    if (S.resting) {
+      var L = layerByIdx(S.restIdx);
+      if (!L) {
+        S.resting = false;
+        S.vy = -0.4;
+      } else if (canPass(L)) {
+        S.resting = false;
+        S.restIdx = -1;
+        S.vy = -0.35;
+        sfxSlip();
+      }
+    }
+
+    if (!S.resting) {
+      var prevBottom = S.ballY - CFG.BALL_R;
+      S.vy = Math.max(CFG.VMAX, S.vy + CFG.GRAV * dt);
+      S.ballY += S.vy * dt;
+      collide(prevBottom);
+    }
+  }
+
+  function collide(prevBottom) {
+    var bottom = S.ballY - CFG.BALL_R;
+
+    for (var n = 0; n < S.layers.length; n++) {
+      var L = S.layers[n];
+      if (prevBottom > L.y && bottom <= L.y) {
+        if (canPass(L)) {
+          onPass(L);
+          continue;
+        }
+        if (L.hazard) { die(); return; }
+        landOn(L);
+        return;
+      }
+    }
+  }
+
+  function onPass(L) {
+    S.combo++;
+    var gain = 10 + (S.combo - 1) * 6;
+    S.score += gain;
+    if (L.i + 1 > S.depth) S.depth = L.i + 1;
+
+    burst(screenX(), screenY(), 7, ['#ff9aa8', '#ff6b7d', '#ffd0d6'], 3.2);
+    sfxPass(S.combo);
+
+    if (S.combo >= 2) showCombo(S.combo);
+
+    updateHud();
+    popScore();
+  }
+
+  function landOn(L) {
+    S.ballY = L.y + CFG.BALL_R + 0.002;
+    S.vy = 0;
+    S.resting = true;
+    S.restIdx = L.i;
+
+    if (S.combo >= 2) {
+      var bonus = S.combo * 12;
+      S.score += bonus;
+      addFloat(screenX(), screenY() - 26, '连穿 ' + S.combo + ' 层  +' + bonus, '#ffd166');
+      updateHud();
+    }
+    S.combo = 0;
+
+    S.shake = Math.max(S.shake, 5);
+    sfxLand();
+  }
+
+  // ===================== 特效 =====================
+  function screenX() { return view.W / 2 + CFG.ORBIT * view.scale; }
+
+  function screenY() {
+    return view.H * 0.40 - (S.ballY - S.camY) * view.scale;
+  }
+
+  function burst(x, y, n, colors, speed) {
+    for (var i = 0; i < n; i++) {
+      var a = Math.random() * TAU;
+      var sp = speed * (0.35 + Math.random() * 0.85) * view.scale * 0.05;
+      S.particles.push({
+        x: x, y: y,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp * 0.8 - view.scale * 0.06,
+        life: 0.45 + Math.random() * 0.45,
+        max: 0.9,
+        size: (1.6 + Math.random() * 3.4) * Math.max(0.8, view.scale / 200),
+        color: colors[(Math.random() * colors.length) | 0]
+      });
+    }
+  }
+
+  function explosion() {
+    var x = screenX(), y = screenY();
+    var colors = ['#ffd166', '#ff7a8a', '#ffffff', '#7ad9ff'];
+    for (var i = 0; i < 46; i++) {
+      var a = Math.random() * TAU;
+      var sp = (60 + Math.random() * 320) * Math.max(0.7, view.scale / 200);
+      S.particles.push({
+        x: x, y: y,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp - 80,
+        life: 0.6 + Math.random() * 0.9,
+        max: 1.5,
+        size: (2 + Math.random() * 5) * Math.max(0.8, view.scale / 200),
+        color: colors[(Math.random() * colors.length) | 0]
+      });
+    }
+  }
+
+  function addFloat(x, y, text, color) {
+    S.floats.push({ x: x, y: y, text: text, color: color, life: 1.15, max: 1.15 });
+  }
+
+  function updateFx(dt) {
+    var g = 900;
+    for (var i = S.particles.length - 1; i >= 0; i--) {
+      var p = S.particles[i];
+      p.vy += g * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.life -= dt;
+      if (p.life <= 0) S.particles.splice(i, 1);
+    }
+    for (var j = S.floats.length - 1; j >= 0; j--) {
+      var f = S.floats[j];
+      f.y -= 42 * dt;
+      f.life -= dt;
+      if (f.life <= 0) S.floats.splice(j, 1);
+    }
+  }
+
+  // ===================== 音效 =====================
+  var AC = null;
+
+  function actx() {
+    if (!S.soundOn) return null;
+    if (!AC) {
+      var C = window.AudioContext || window.webkitAudioContext;
+      if (!C) return null;
+      try { AC = new C(); } catch (e) { return null; }
+    }
+    if (AC.state === 'suspended') { AC.resume(); }
+    return AC;
+  }
+
+  function tone(freq, dur, type, vol, slideTo, delay) {
+    var ac = actx();
+    if (!ac) return;
+    var t0 = ac.currentTime + (delay || 0);
+    var o = ac.createOscillator();
+    var g = ac.createGain();
+    o.type = type || 'sine';
+    o.frequency.setValueAtTime(freq, t0);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(20, slideTo), t0 + dur);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(vol || 0.1, t0 + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g);
+    g.connect(ac.destination);
+    o.start(t0);
+    o.stop(t0 + dur + 0.03);
+  }
+
+  function noise(dur, vol, cut) {
+    var ac = actx();
+    if (!ac) return;
+    var len = Math.floor(ac.sampleRate * dur);
+    var buf = ac.createBuffer(1, len, ac.sampleRate);
+    var d = buf.getChannelData(0);
+    for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    var src = ac.createBufferSource();
+    src.buffer = buf;
+    var f = ac.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = cut || 1400;
+    var g = ac.createGain();
+    g.gain.value = vol;
+    g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + dur);
+    src.connect(f); f.connect(g); g.connect(ac.destination);
+    src.start();
+  }
+
+  function sfxPass(c) {
+    var base = 480 + Math.min(c, 8) * 45;
+    tone(base, 0.085, 'triangle', 0.085, base * 1.7);
+  }
+
+  function sfxSlip() { tone(320, 0.07, 'sine', 0.06, 460); }
+
+  function sfxLand() { tone(150, 0.13, 'sine', 0.14, 78); }
+
+  function sfxDie() {
+    tone(260, 0.55, 'sawtooth', 0.13, 42);
+    noise(0.42, 0.18, 900);
+  }
+
+  // ===================== 绘制 =====================
+  function sectorPath(cx, cy, rx, ry, aStart, aEnd) {
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, aStart, aEnd);
+    ctx.lineTo(cx, cy);
+    ctx.closePath();
+  }
+
+  var bgDust = [];
+
+  function buildDust() {
+    bgDust.length = 0;
+    var n = Math.round((view.W * view.H) / 24000);
+    n = Math.min(72, Math.max(22, n));
+    for (var i = 0; i < n; i++) {
+      bgDust.push({
+        x: Math.random() * view.W,
+        y: Math.random() * view.H,
+        r: 0.4 + Math.random() * 1.5,
+        sp: 5 + Math.random() * 18,
+        ph: Math.random() * TAU,
+        a: 0.05 + Math.random() * 0.15
+      });
+    }
+  }
+
+  function drawDust() {
+    ctx.fillStyle = '#ff9db0';
+    for (var i = 0; i < bgDust.length; i++) {
+      var d = bgDust[i];
+      var y = (d.y - S.t * d.sp) % (view.H + 40);
+      if (y < 0) y += view.H + 40;
+      ctx.globalAlpha = d.a * (0.55 + 0.45 * Math.sin(S.t * 1.3 + d.ph));
+      ctx.beginPath();
+      ctx.arc(d.x, y, d.r, 0, TAU);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawBackground() {
+    var cx = view.W / 2;
+    var cy = view.H * 0.40;
+    var rad = Math.max(view.W, view.H) * 0.95;
+
+    var g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+    g.addColorStop(0, '#22101a');
+    g.addColorStop(0.42, '#150a12');
+    g.addColorStop(1, '#060208');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, view.W, view.H);
+
+    // 顶部暗角：保证分数与按钮在塔面上依然清晰
+    var tg = ctx.createLinearGradient(0, 0, 0, view.H * 0.24);
+    tg.addColorStop(0, 'rgba(7,3,8,0.86)');
+    tg.addColorStop(0.55, 'rgba(7,3,8,0.42)');
+    tg.addColorStop(1, 'rgba(7,3,8,0)');
+    ctx.fillStyle = tg;
+    ctx.fillRect(0, 0, view.W, view.H * 0.24);
+
+    // 底部同理，避免塔身压住提示文字
+    var bg2 = ctx.createLinearGradient(0, view.H, 0, view.H * 0.86);
+    bg2.addColorStop(0, 'rgba(7,3,8,0.72)');
+    bg2.addColorStop(1, 'rgba(7,3,8,0)');
+    ctx.fillStyle = bg2;
+    ctx.fillRect(0, view.H * 0.86, view.W, view.H * 0.14);
+
+    // 塔轴光柱
+    var halfW = view.scale * 0.5;
+    var lg = ctx.createLinearGradient(cx - halfW, 0, cx + halfW, 0);
+    lg.addColorStop(0, 'rgba(255,120,150,0)');
+    lg.addColorStop(0.5, 'rgba(255,120,150,0.055)');
+    lg.addColorStop(1, 'rgba(255,120,150,0)');
+    ctx.fillStyle = lg;
+    ctx.fillRect(cx - halfW, 0, halfW * 2, view.H);
+
+    drawDust();
+  }
+
+  function drawLayer(L) {
+    var cx = view.W / 2;
+    var cy0 = view.H * 0.40;
+    var scale = view.scale;
+    var R = CFG.R * scale;
+    var ry = R * CFG.TILT;
+    var th = CFG.THICK * scale;
+    var sy = cy0 - (L.y - S.camY) * scale;
+
+    if (sy - ry - th > view.H + 60 || sy + ry + th < -60) return;
+
+    var a0 = L.gap - L.gapW / 2 + S.rot;
+    var a1 = L.gap + L.gapW / 2 + S.rot;
+    var aEnd = a0 + TAU;
+
+    var dist = Math.max(0, S.camY - L.y);
+    var fade = Math.max(0.34, Math.min(1, 1 - (dist - 2.4) / 6.2));
+
+    ctx.globalAlpha = fade;
+
+    // 侧壁（底面形状下移）
+    sectorPath(cx, sy + th, R, ry, a1, aEnd);
+    ctx.fillStyle = L.hazard ? '#45080f' : '#8c1a2b';
+    ctx.fill();
+
+    // 顶面
+    var g = ctx.createLinearGradient(cx, sy - ry, cx, sy + ry);
+    if (L.hazard) {
+      g.addColorStop(0, '#7a1024');
+      g.addColorStop(0.5, '#420a16');
+      g.addColorStop(1, '#1e0309');
+    } else {
+      g.addColorStop(0, '#ff7c8e');
+      g.addColorStop(0.42, '#ef3d55');
+      g.addColorStop(1, '#bf1d33');
+    }
+    sectorPath(cx, sy, R, ry, a1, aEnd);
+    ctx.fillStyle = g;
+    ctx.fill();
+
+    // 外缘
+    ctx.beginPath();
+    ctx.ellipse(cx, sy, R, ry, 0, a1, aEnd);
+    ctx.lineWidth = Math.max(1, scale * 0.013);
+    ctx.strokeStyle = L.hazard ? 'rgba(255,58,96,0.9)' : 'rgba(255,196,206,0.5)';
+    ctx.stroke();
+
+    if (L.hazard) {
+      drawSpikes(L, cx, sy, R, ry, a1, aEnd);
+    } else {
+      drawSeeds(L, cx, sy, R, ry);
+    }
+
+    ctx.globalAlpha = 1;
+  }
+
+  function drawSeeds(L, cx, sy, R, ry) {
+    var n = 9;
+    ctx.fillStyle = 'rgba(28,7,12,0.72)';
+    for (var k = 0; k < n; k++) {
+      var t = (k * 0.6180339887 + L.seed * 0.0137) % 1;
+      var rr = 0.26 + t * 0.63;
+      var wa = L.seed + k * 2.399963 + S.rot;
+
+      if (Math.abs(angDiff(wa, L.gap + S.rot)) < L.gapW / 2 + 0.05) continue;
+
+      var px = cx + Math.cos(wa) * rr * R;
+      var py = sy + Math.sin(wa) * rr * ry;
+
+      ctx.beginPath();
+      ctx.ellipse(px, py, R * 0.030, R * 0.030 * (0.55 + CFG.TILT), wa, 0, TAU);
+      ctx.fill();
+    }
+  }
+
+  function drawSpikes(L, cx, sy, R, ry, a1, aEnd) {
+    var span = aEnd - a1;
+    var step = 0.185;
+    ctx.fillStyle = '#ff2b4a';
+
+    for (var a = a1 + 0.02; a < aEnd - 0.04; a += step) {
+      var w = Math.min(step * 0.62, aEnd - a);
+      var mx = a + w / 2;
+
+      var x1 = cx + Math.cos(a) * R, y1 = sy + Math.sin(a) * ry;
+      var x2 = cx + Math.cos(a + w) * R, y2 = sy + Math.sin(a + w) * ry;
+      var x3 = cx + Math.cos(mx) * R * 1.075, y3 = sy + Math.sin(mx) * ry * 1.13;
+
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x3, y3);
+      ctx.lineTo(x2, y2);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // 内圈脉动光
+    var pulse = 0.35 + 0.25 * Math.sin(S.t * 5 + L.i);
+    ctx.beginPath();
+    ctx.ellipse(cx, sy, R, ry, 0, a1, aEnd);
+    ctx.lineWidth = Math.max(1.5, view.scale * 0.02);
+    ctx.strokeStyle = 'rgba(255,58,96,' + pulse.toFixed(3) + ')';
+    ctx.stroke();
+  }
+
+  function drawBall() {
+    var sx = screenX();
+    var sy = screenY();
+    var r = CFG.BALL_R * view.scale;
+
+    // 外发光
+    var glow = ctx.createRadialGradient(sx, sy, r * 0.85, sx, sy, r * 2.1);
+    glow.addColorStop(0, 'rgba(110,215,255,0.20)');
+    glow.addColorStop(1, 'rgba(110,215,255,0)');
+    ctx.beginPath();
+    ctx.arc(sx, sy, r * 2.1, 0, TAU);
+    ctx.fillStyle = glow;
+    ctx.fill();
+
+    // 球体
+    var g = ctx.createRadialGradient(sx - r * 0.36, sy - r * 0.42, r * 0.08, sx, sy, r * 1.02);
+    g.addColorStop(0, '#ffffff');
+    g.addColorStop(0.34, '#a8ecff');
+    g.addColorStop(0.78, '#4bb4e8');
+    g.addColorStop(1, '#1f74ad');
+    ctx.beginPath();
+    ctx.arc(sx, sy, r, 0, TAU);
+    ctx.fillStyle = g;
+    ctx.fill();
+
+    // 高光
+    ctx.beginPath();
+    ctx.arc(sx - r * 0.30, sy - r * 0.36, r * 0.27, 0, TAU);
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fill();
+
+    // 环
+    ctx.beginPath();
+    ctx.arc(sx, sy, r, 0, TAU);
+    ctx.lineWidth = Math.max(1, r * 0.1);
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.stroke();
+  }
+
+  // 球被上层遮挡时的透视轮廓，保证任何角度都能看见球
+  function drawBallGhost() {
+    var sx = screenX();
+    var sy = screenY();
+    var r = CFG.BALL_R * view.scale;
+
+    ctx.globalAlpha = 0.34;
+    var g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
+    g.addColorStop(0, 'rgba(200,246,255,0.95)');
+    g.addColorStop(1, 'rgba(80,185,255,0.35)');
+    ctx.beginPath();
+    ctx.arc(sx, sy, r * 0.94, 0, TAU);
+    ctx.fillStyle = g;
+    ctx.fill();
+
+    ctx.globalAlpha = 0.62;
+    ctx.beginPath();
+    ctx.arc(sx, sy, r, 0, TAU);
+    ctx.lineWidth = Math.max(1, r * 0.16);
+    ctx.strokeStyle = 'rgba(215,250,255,0.9)';
+    ctx.stroke();
+
+    ctx.globalAlpha = 1;
+  }
+
+  function drawParticles() {
+    for (var i = 0; i < S.particles.length; i++) {
+      var p = S.particles[i];
+      var a = Math.max(0, p.life / p.max);
+      ctx.globalAlpha = a;
+      ctx.fillStyle = p.color;
+      var s = p.size * (0.4 + a * 0.6);
+      ctx.fillRect(p.x - s / 2, p.y - s / 2, s, s);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawFloats() {
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (var i = 0; i < S.floats.length; i++) {
+      var f = S.floats[i];
+      var a = Math.max(0, Math.min(1, f.life / 0.5));
+      ctx.globalAlpha = a;
+      ctx.font = '800 ' + Math.round(Math.min(22, Math.max(14, view.scale * 0.085))) + 'px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+      ctx.fillStyle = f.color;
+      ctx.fillText(f.text, f.x, f.y);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function draw() {
+    var dpr = view.dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    drawBackground();
+
+    ctx.save();
+    if (S.shake > 0.4) {
+      ctx.translate((Math.random() - 0.5) * S.shake, (Math.random() - 0.5) * S.shake);
+    }
+
+    var items = [];
+    var bot = S.camY - (view.H / view.scale) - 1.2;
+    var top = S.camY + 1.8;
+
+    for (var i = 0; i < S.layers.length; i++) {
+      var L = S.layers[i];
+      if (L.y > top || L.y < bot) continue;
+      items.push(L);
+    }
+    items.push({ __ball: true, y: S.ballY });
+
+    items.sort(function (a, b) { return a.y - b.y; });
+
+    for (var n = 0; n < items.length; n++) {
+      if (items[n].__ball) drawBall();
+      else drawLayer(items[n]);
+    }
+
+    ctx.restore();
+
+    drawBallGhost();
+    drawParticles();
+    drawFloats();
+  }
+
+  // ===================== 主循环 =====================
+  var last = 0;
+
+  function frame(now) {
+    window.requestAnimationFrame(frame);
+
+    if (!last) last = now;
+    var dt = (now - last) / 1000;
+    last = now;
+    if (dt > 0.05) dt = 0.05;
+    if (dt < 0) dt = 0;
+
+    S.t += dt;
+
+    if (S.phase === 'playing') {
+      updatePlay(dt);
+    } else if (S.phase === 'over') {
+      S.deadT += dt;
+      if (!S.overShown && S.deadT > 0.62) {
+        S.overShown = true;
+        showOver();
+      }
+    }
+
+    updateFx(dt);
+
+    var target = S.ballY - 0.05;
+    var k = 1 - Math.exp(-9 * dt);
+    S.camY += (target - S.camY) * k;
+
+    if (S.shake > 0.4) S.shake *= Math.pow(0.02, dt);
+    else S.shake = 0;
+
+    draw();
+  }
+
+  // ===================== HUD =====================
+  function updateHud() {
+    elScore.textContent = S.score;
+    elDepth.textContent = '深度 ' + S.depth;
+  }
+
+  function popScore() {
+    elScore.classList.remove('pop');
+    void elScore.offsetWidth;
+    elScore.classList.add('pop');
+    window.setTimeout(function () { elScore.classList.remove('pop'); }, 120);
+  }
+
+  var comboTimer = 0;
+  function showCombo(n) {
+    elCombo.textContent = '连穿 ' + n + ' 层';
+    elCombo.classList.add('on');
+    window.clearTimeout(comboTimer);
+    comboTimer = window.setTimeout(function () {
+      elCombo.classList.remove('on');
+    }, 950);
+  }
+
+  // ===================== 输入 =====================
+  var dragId = null;
+  var lastX = 0;
+
+  stage.addEventListener('pointerdown', function (e) {
+    if (S.phase !== 'playing') return;
+    if (e.target.closest && e.target.closest('button')) return;
+    dragId = e.pointerId;
+    lastX = e.clientX;
+    try { stage.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+
+  stage.addEventListener('pointermove', function (e) {
+    if (dragId !== e.pointerId) return;
+    var dx = e.clientX - lastX;
+    lastX = e.clientX;
+    S.rot += dx * CFG.DRAG;
+  });
+
+  function endDrag(e) {
+    if (dragId !== e.pointerId) return;
+    dragId = null;
+    try { stage.releasePointerCapture(e.pointerId); } catch (err) {}
+  }
+
+  stage.addEventListener('pointerup', endDrag);
+  stage.addEventListener('pointercancel', endDrag);
+  stage.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+  window.addEventListener('keydown', function (e) {
+    if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+      keys.left = true;
+      e.preventDefault();
+    } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+      keys.right = true;
+      e.preventDefault();
+    } else if (e.code === 'Space' || e.code === 'Enter') {
+      if (S.phase === 'ready') { startGame(); e.preventDefault(); }
+      else if (S.phase === 'over' && S.overShown) { startGame(); e.preventDefault(); }
+      else if (S.phase === 'playing' || S.phase === 'paused') { togglePause(); e.preventDefault(); }
+    } else if (e.code === 'Escape' || e.code === 'KeyP') {
+      if (S.phase === 'playing' || S.phase === 'paused') { togglePause(); e.preventDefault(); }
+    }
+  });
+
+  window.addEventListener('keyup', function (e) {
+    if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = false;
+    if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = false;
+  });
+
+  // ===================== 按钮 =====================
+  document.getElementById('btnStart').addEventListener('click', startGame);
+  document.getElementById('btnAgain').addEventListener('click', startGame);
+  document.getElementById('btnResume').addEventListener('click', togglePause);
+
+  btnPause.addEventListener('click', function () {
+    if (S.phase === 'playing' || S.phase === 'paused') togglePause();
+  });
+
+  btnSound.addEventListener('click', function () {
+    S.soundOn = !S.soundOn;
+    btnSound.setAttribute('aria-pressed', S.soundOn ? 'true' : 'false');
+    try { localStorage.setItem('helix-jump-sound', S.soundOn ? '1' : '0'); } catch (e) {}
+    if (S.soundOn) { actx(); tone(660, 0.09, 'triangle', 0.09, 880); }
+  });
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden && S.phase === 'playing') togglePause();
+  });
+
+  // ===================== 启动 =====================
+  function boot() {
+    resize();
+    btnSound.setAttribute('aria-pressed', S.soundOn ? 'true' : 'false');
+    bestStart.textContent = S.best;
+    reset();
+    window.requestAnimationFrame(frame);
+  }
+
+  if (window.ResizeObserver) {
+    new ResizeObserver(function () { resize(); }).observe(stage);
+  }
+  window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', function () {
+    window.setTimeout(resize, 180);
+  });
+
+  boot();
+})();
+</script>
+</body>
+</html>
